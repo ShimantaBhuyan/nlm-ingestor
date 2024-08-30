@@ -7,6 +7,9 @@ from flask import Flask, request, jsonify, make_response
 from werkzeug.utils import secure_filename
 from nlm_ingestor.ingestor import ingestor_api
 from nlm_utils.utils import file_utils
+from hypercorn.config import Config
+from hypercorn.asyncio import serve
+import asyncio
 
 app = Flask(__name__)
 
@@ -70,11 +73,24 @@ def parse_document(
             os.unlink(tmp_file)
     return make_response(jsonify({"status": status, "reason": msg}), rc)
 
-def main():
+# def main():
+#     logger.info("Starting ingestor service..")
+#     # if ENVIRONMENT is set to "development", run the app in IPv4 binding, else run in IPv6 binding
+#     if os.environ.get("ENVIRONMENT") == "development":
+#         app.run(host="0.0.0.0", port=5001, debug=False)
+#     else:
+#         app.run(host="::", port=5001, debug=False)
+
+# if __name__ == "__main__":
+#     main()
+
+
+async def main():
     logger.info("Starting ingestor service..")
-    app.run(host="::", port=5001, debug=False)
+    hypercorn_config = Config()
+    hypercorn_config.bind = ["[::]:5001"] if os.environ.get("ENVIRONMENT") != "development" else ["0.0.0.0:5001"]
+    # hypercorn_config.workers = 4  # Adjust the number of workers as needed
+    await serve(app, hypercorn_config)
 
 if __name__ == "__main__":
-    main()
-
-
+    asyncio.run(main())

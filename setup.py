@@ -16,7 +16,7 @@ setup(
         "flask",
         "flask_restful",
         "flask_jsonpify",
-        "gunicorn",
+        "Hypercorn==0.17.3",
         "werkzeug",
         "tika",
         "bs4",
