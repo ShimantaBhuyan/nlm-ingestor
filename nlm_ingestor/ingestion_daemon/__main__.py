@@ -3,7 +3,7 @@ import nlm_ingestor.ingestion_daemon.config as cfg
 import os
 import tempfile
 import traceback
-from flask import Flask, request, jsonify, make_response
+from flask import Flask, request, jsonify
 from werkzeug.utils import secure_filename
 from nlm_ingestor.ingestor import ingestor_api
 from nlm_utils.utils import file_utils
@@ -22,10 +22,7 @@ def health_check():
     return 'Service is running', 200
 
 @app.route('/api/parseDocument', methods=['POST'])
-def parse_document(
-    file=None,
-    render_format: str = "all",
-):
+def parse_document():
     render_format = request.args.get('renderFormat', 'all')
     use_new_indent_parser = request.args.get('useNewIndentParser', 'no')
     apply_ocr = request.args.get('applyOcr', 'no')
@@ -39,51 +36,27 @@ def parse_document(
             "parse_pages": (),
             "apply_ocr": apply_ocr == "yes"
         }
-        # save the incoming file to a temporary location
-        filename = secure_filename(file.filename)
-        _, file_extension = os.path.splitext(file.filename)
-        tempfile_handler, tmp_file = tempfile.mkstemp(suffix=file_extension)
-        os.close(tempfile_handler)
-        file.save(tmp_file)
-        # calculate the file properties
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as temp:
+            file.save(temp.name)
+            tmp_file = temp.name
+        
         props = file_utils.extract_file_properties(tmp_file)
-        logger.info(f"Parsing document: {filename}")
+        logger.info(f"Parsing document: {secure_filename(file.filename)}")
         return_dict, _ = ingestor_api.ingest_document(
-            filename,
+            secure_filename(file.filename),
             tmp_file,
             props["mimeType"],
             parse_options=parse_options,
         )
-        if tmp_file and os.path.exists(tmp_file):
-            os.unlink(tmp_file)
-        return make_response(
-            jsonify({"status": 200, "return_dict": return_dict or {}}),
-        )
+        return jsonify({"status": 200, "return_dict": return_dict or {}})
 
     except Exception as e:
-        print("error uploading file, stacktrace: ", traceback.format_exc())
-        logger.error(
-            f"error uploading file, stacktrace: {traceback.format_exc()}",
-            exc_info=True,
-        )
-        status, rc, msg = "fail", 500, str(e)
+        logger.error(f"Error uploading file: {str(e)}", exc_info=True)
+        return jsonify({"status": "fail", "reason": str(e)}), 500
 
     finally:
         if tmp_file and os.path.exists(tmp_file):
             os.unlink(tmp_file)
-    return make_response(jsonify({"status": status, "reason": msg}), rc)
-
-# def main():
-#     logger.info("Starting ingestor service..")
-#     # if ENVIRONMENT is set to "development", run the app in IPv4 binding, else run in IPv6 binding
-#     if os.environ.get("ENVIRONMENT") == "development":
-#         app.run(host="0.0.0.0", port=5001, debug=False)
-#     else:
-#         app.run(host="::", port=5001, debug=False)
-
-# if __name__ == "__main__":
-#     main()
-
 
 async def main():
     logger.info("Starting ingestor service..")
